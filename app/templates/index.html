@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HL7 Validator — Message Inspector</title>
+<style>
+/* ── Reset & base ──────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --brand:#1a5276;--brand-d:#0e2f44;--brand-l:#2471a3;
+  --ok:#1a7a4a;--ok-bg:#d4f5e2;--ok-border:#a3e4c0;
+  --err:#8b1a1a;--err-bg:#fde8e8;--err-border:#f5a5a5;
+  --warn:#7a5c00;--warn-bg:#fff8d6;--warn-border:#f0d060;
+  --info:#0e4d7a;--info-bg:#ddeeff;--info-border:#90c8f0;
+  --bg:#f0f4f8;--surface:#ffffff;--border:#d0d8e4;
+  --text:#1c2833;--muted:#5d6d7e;--code:#1e1e2e;
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;min-height:100vh;display:flex;flex-direction:column}
+
+/* ── Header ──────────────────────────────────────────────*/
+header{background:var(--brand);padding:0 1.5rem;display:flex;align-items:center;gap:1rem;height:56px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.logo{display:flex;align-items:center;gap:.5rem;color:#fff;font-weight:700;font-size:1.1rem}
+.logo-icon{width:34px;height:34px;background:rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.2rem}
+.logo-sub{font-size:.72rem;opacity:.65;font-weight:400;letter-spacing:.02em}
+.header-right{margin-left:auto;display:flex;gap:.5rem}
+.btn-header{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;padding:.3rem .8rem;border-radius:6px;cursor:pointer;font-size:.8rem;transition:background .15s}
+.btn-header:hover{background:rgba(255,255,255,.25)}
+
+/* ── Layout ──────────────────────────────────────────────*/
+.app{display:flex;flex:1;overflow:hidden;height:calc(100vh - 56px)}
+.pane-left{width:42%;min-width:320px;display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--surface)}
+.pane-right{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Pane headers ────────────────────────────────────────*/
+.pane-header{padding:.6rem 1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.5rem;background:#f8fafc;flex-shrink:0}
+.pane-title{font-weight:600;font-size:.85rem;color:var(--brand)}
+
+/* ── Toolbar / samples ───────────────────────────────────*/
+.samples-bar{padding:.4rem .75rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;background:#fafbfc;flex-shrink:0}
+.samples-label{font-size:.72rem;color:var(--muted);white-space:nowrap;font-weight:500}
+.sample-btn{font-size:.72rem;padding:.2rem .55rem;border-radius:20px;border:1px solid var(--border);background:#fff;color:var(--text);cursor:pointer;transition:all .15s;white-space:nowrap}
+.sample-btn:hover{border-color:var(--brand);color:var(--brand);background:#eef4fb}
+
+/* ── Textarea ────────────────────────────────────────────*/
+.editor-wrap{flex:1;position:relative;display:flex;flex-direction:column;overflow:hidden}
+#hl7input{flex:1;width:100%;border:none;outline:none;padding:.9rem 1rem;font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:.82rem;line-height:1.7;background:#1e1e2e;color:#cdd6f4;resize:none;tab-size:2}
+#hl7input::placeholder{color:#585b70}
+
+/* ── Validate button ─────────────────────────────────────*/
+.validate-bar{padding:.6rem .75rem;background:#f8fafc;border-top:1px solid var(--border);display:flex;align-items:center;gap:.5rem;flex-shrink:0}
+#validateBtn{flex:1;padding:.55rem 1rem;background:var(--brand);color:#fff;border:none;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:.4rem}
+#validateBtn:hover{background:var(--brand-l)}
+#validateBtn:disabled{background:#94a3b8;cursor:not-allowed}
+#clearBtn{padding:.5rem .75rem;background:#fff;border:1px solid var(--border);border-radius:8px;cursor:pointer;color:var(--muted);font-size:.8rem;transition:all .15s}
+#clearBtn:hover{border-color:#dc3545;color:#dc3545}
+.char-count{font-size:.72rem;color:var(--muted);white-space:nowrap}
+
+/* ── Right pane tabs ─────────────────────────────────────*/
+.tabs{display:flex;border-bottom:1px solid var(--border);background:#f8fafc;flex-shrink:0}
+.tab{padding:.55rem 1rem;font-size:.82rem;cursor:pointer;border-bottom:2px solid transparent;color:var(--muted);font-weight:500;transition:all .15s;user-select:none}
+.tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+.tab:hover:not(.active){color:var(--text)}
+.tab-badge{font-size:.65rem;padding:.1em .4em;border-radius:10px;margin-left:.25rem;background:#e2e8f0;color:var(--muted)}
+.tab-badge.err{background:#fde8e8;color:var(--err)}
+.tab-badge.warn{background:#fff8d6;color:var(--warn)}
+
+.tab-content{display:none;flex:1;overflow-y:auto;padding:1rem}
+.tab-content.active{display:block}
+
+/* ── Result status banner ────────────────────────────────*/
+#statusBanner{display:none;padding:.6rem 1rem;font-weight:600;font-size:.9rem;border-bottom:1px solid var(--border);flex-shrink:0;align-items:center;gap:.5rem}
+#statusBanner.ok{background:var(--ok-bg);color:var(--ok);border-color:var(--ok-border);display:flex}
+#statusBanner.err{background:var(--err-bg);color:var(--err);border-color:var(--err-border);display:flex}
+#statusBanner.warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-border);display:flex}
+.status-icon{font-size:1.1rem}
+.status-counts{margin-left:auto;display:flex;gap:.75rem;font-weight:400;font-size:.8rem}
+.count-pill{padding:.1rem .5rem;border-radius:10px;font-weight:600}
+.count-err{background:var(--err-bg);color:var(--err)}
+.count-warn{background:var(--warn-bg);color:var(--warn)}
+.count-info{background:var(--info-bg);color:var(--info)}
+
+/* ── Summary cards ───────────────────────────────────────*/
+.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.5rem;margin-bottom:1rem}
+.info-card{background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:.6rem .75rem}
+.info-card-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:500;margin-bottom:.15rem}
+.info-card-value{font-size:.88rem;font-weight:600;color:var(--text);word-break:break-all}
+.info-card-value.mono{font-family:monospace;font-size:.82rem}
+.info-card-value.empty{color:#94a3b8;font-weight:400;font-style:italic}
+
+/* ── Issues list ─────────────────────────────────────────*/
+.issue{border-radius:8px;padding:.6rem .75rem;margin-bottom:.5rem;border-left:3px solid}
+.issue.ERROR{background:var(--err-bg);border-color:var(--err)}
+.issue.WARNING{background:var(--warn-bg);border-color:#e6b800}
+.issue.INFO{background:var(--info-bg);border-color:#5aabee}
+.issue-header{display:flex;align-items:center;gap:.4rem;margin-bottom:.2rem}
+.issue-badge{font-size:.68rem;font-weight:700;padding:.15em .5em;border-radius:4px;letter-spacing:.03em}
+.ERROR .issue-badge{background:var(--err);color:#fff}
+.WARNING .issue-badge{background:#b8860b;color:#fff}
+.INFO .issue-badge{background:#2980b9;color:#fff}
+.issue-seg{font-size:.75rem;font-family:monospace;background:rgba(0,0,0,.07);padding:.1em .4em;border-radius:3px;color:var(--text)}
+.issue-code{font-size:.7rem;color:var(--muted);margin-left:auto}
+.issue-desc{font-size:.82rem;color:var(--text);margin-bottom:.2rem}
+.issue-suggestion{font-size:.77rem;color:var(--muted);font-style:italic}
+.issue-suggestion::before{content:"💡 "}
+.no-issues{text-align:center;padding:2rem;color:var(--muted)}
+.no-issues .big-icon{font-size:2.5rem;display:block;margin-bottom:.5rem}
+
+/* ── Segment explorer ────────────────────────────────────*/
+.seg-card{border:1px solid var(--border);border-radius:8px;margin-bottom:.5rem;overflow:hidden}
+.seg-card-header{display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;background:#f8fafc;cursor:pointer;user-select:none}
+.seg-card-header:hover{background:#eef2f7}
+.seg-name{font-family:monospace;font-weight:700;font-size:.88rem;color:var(--brand);background:#e8f0f8;padding:.15em .45em;border-radius:4px;min-width:40px;text-align:center}
+.seg-desc{font-size:.8rem;color:var(--muted)}
+.seg-chevron{margin-left:auto;color:var(--muted);font-size:.75rem;transition:transform .2s}
+.seg-card.open .seg-chevron{transform:rotate(180deg)}
+.seg-raw{font-family:monospace;font-size:.74rem;background:var(--code);color:#a6e3a1;padding:.5rem .75rem;border-bottom:1px solid #333;overflow-x:auto;white-space:pre;display:none}
+.seg-card.open .seg-raw{display:block}
+.seg-fields{display:none;padding:.5rem}
+.seg-card.open .seg-fields{display:block}
+.field-row{display:flex;align-items:flex-start;gap:.5rem;padding:.3rem .25rem;border-bottom:1px solid #f0f4f8;font-size:.8rem}
+.field-row:last-child{border-bottom:none}
+.field-pos{width:28px;text-align:right;color:#94a3b8;font-family:monospace;font-size:.72rem;flex-shrink:0;padding-top:1px}
+.field-label{color:var(--muted);min-width:160px;flex-shrink:0}
+.field-value{font-family:monospace;color:var(--text);word-break:break-all;background:#f8fafc;padding:.1em .35em;border-radius:3px;font-size:.78rem}
+
+/* ── Raw tab ─────────────────────────────────────────────*/
+.raw-display{background:var(--code);border-radius:8px;padding:1rem;overflow-x:auto}
+.raw-line{display:block;font-family:monospace;font-size:.8rem;line-height:1.8;white-space:pre}
+.raw-line .seg-token{color:#89b4fa;font-weight:700}
+.raw-line .sep-token{color:#585b70}
+.raw-line .val-token{color:#cdd6f4}
+.raw-line .comp-token{color:#a6e3a1}
+.raw-line.has-error{background:rgba(243,139,168,.15);border-radius:3px}
+
+/* ── Empty state ─────────────────────────────────────────*/
+#emptyState{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;color:var(--muted);gap:.5rem;padding:2rem;text-align:center}
+.empty-icon{font-size:3rem;opacity:.4}
+.empty-title{font-size:1rem;font-weight:600;opacity:.7}
+.empty-sub{font-size:.82rem;opacity:.5;max-width:260px}
+
+/* ── Loading ─────────────────────────────────────────────*/
+#loadingState{display:none;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:1rem}
+.spinner{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:var(--brand);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Scrollbar ───────────────────────────────────────────*/
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#c8d0da;border-radius:3px}
+
+/* ── Responsive ──────────────────────────────────────────*/
+@media(max-width:768px){
+  .app{flex-direction:column;height:auto;overflow:visible}
+  .pane-left{width:100%;height:40vh;min-width:0}
+  .pane-right{height:60vh}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">⚕</div>
+    <div>
+      <div>HL7 Validator</div>
+      <div class="logo-sub">Message Inspector v1.0</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <button class="btn-header" onclick="copyResult()">📋 Copia risultato</button>
+    <button class="btn-header" onclick="showHelp()">? Aiuto</button>
+  </div>
+</header>
+
+<div class="app">
+
+  <!-- ══ LEFT PANE — EDITOR ══════════════════════════════ -->
+  <div class="pane-left">
+
+    <div class="pane-header">
+      <span class="pane-title">📝 Messaggio HL7 raw</span>
+    </div>
+
+    <div class="samples-bar">
+      <span class="samples-label">Esempi:</span>
+      {% for key, s in samples.items() %}
+      <button class="sample-btn" onclick="loadSample('{{ key }}')">{{ s.label }}</button>
+      {% endfor %}
+    </div>
+
+    <div class="editor-wrap">
+      <textarea id="hl7input"
+        placeholder="Incolla qui il messaggio HL7&#10;&#10;Esempio:&#10;MSH|^~\&|LIS|OSDAL|HIS|OSDAL|20240315143022||ORU^R01|MSG001|P|2.5&#10;PID|1||123456^^^OSDAL||Rossi^Mario||19800315|M&#10;..."
+        spellcheck="false"
+        oninput="onInput()"
+        onkeydown="handleKey(event)"
+      ></textarea>
+    </div>
+
+    <div class="validate-bar">
+      <button id="clearBtn" onclick="clearAll()" title="Cancella">✕ Pulisci</button>
+      <button id="validateBtn" onclick="validate()" disabled>
+        <span id="btnIcon">⚡</span>
+        <span id="btnText">Valida messaggio</span>
+      </button>
+      <span class="char-count" id="charCount">0 caratteri</span>
+    </div>
+
+  </div>
+
+  <!-- ══ RIGHT PANE — RESULTS ════════════════════════════ -->
+  <div class="pane-right">
+
+    <div id="statusBanner"></div>
+
+    <div id="emptyState">
+      <span class="empty-icon">🔍</span>
+      <span class="empty-title">Nessun messaggio da analizzare</span>
+      <span class="empty-sub">Incolla un messaggio HL7 nel pannello a sinistra o scegli un esempio, poi clicca Valida.</span>
+    </div>
+
+    <div id="loadingState">
+      <div class="spinner"></div>
+      <span style="color:var(--muted);font-size:.85rem">Analisi in corso…</span>
+    </div>
+
+    <div id="resultArea" style="display:none;flex-direction:column;flex:1;overflow:hidden">
+
+      <div class="tabs">
+        <div class="tab active" data-tab="summary" onclick="switchTab(this)">
+          Riepilogo
+        </div>
+        <div class="tab" data-tab="issues" onclick="switchTab(this)">
+          Issues <span class="tab-badge" id="badgeIssues">0</span>
+        </div>
+        <div class="tab" data-tab="segments" onclick="switchTab(this)">
+          Segmenti <span class="tab-badge" id="badgeSegs">0</span>
+        </div>
+        <div class="tab" data-tab="raw" onclick="switchTab(this)">
+          Raw
+        </div>
+      </div>
+
+      <!-- Summary tab -->
+      <div class="tab-content active" id="tab-summary">
+        <div class="summary-grid" id="summaryGrid"></div>
+        <div id="summarySegList"></div>
+      </div>
+
+      <!-- Issues tab -->
+      <div class="tab-content" id="tab-issues">
+        <div id="issuesList"></div>
+      </div>
+
+      <!-- Segments tab -->
+      <div class="tab-content" id="tab-segments">
+        <div id="segmentsList"></div>
+      </div>
+
+      <!-- Raw tab -->
+      <div class="tab-content" id="tab-raw">
+        <div class="raw-display" id="rawDisplay"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const SAMPLES = {{ samples | tojson }};
+let lastResult = null;
+
+// ── Input handling ─────────────────────────────────────
+function onInput() {
+  const v = document.getElementById('hl7input').value;
+  document.getElementById('charCount').textContent = v.length + ' caratteri';
+  document.getElementById('validateBtn').disabled = !v.trim();
+}
+
+function handleKey(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    validate();
+  }
+}
+
+function clearAll() {
+  document.getElementById('hl7input').value = '';
+  document.getElementById('charCount').textContent = '0 caratteri';
+  document.getElementById('validateBtn').disabled = true;
+  document.getElementById('emptyState').style.display = 'flex';
+  document.getElementById('resultArea').style.display = 'none';
+  document.getElementById('statusBanner').className = '';
+  document.getElementById('statusBanner').style.display = 'none';
+  document.getElementById('loadingState').style.display = 'none';
+}
+
+function loadSample(key) {
+  const s = SAMPLES[key];
+  if (!s || !s.message) return;
+  // Server may deliver \r as literal chars or as escape sequences — normalise both
+  let raw = s.message;
+  // Replace literal backslash-r sequences (from JSON escaping)
+  raw = raw.replace(/\\r/g, '\r');
+  // Normalise any remaining \n to \r (HL7 standard segment separator)
+  raw = raw.replace(/\r\n/g, '\r').replace(/\n/g, '\r');
+  document.getElementById('hl7input').value = raw;
+  onInput();
+  validate();
+}
+
+// ── Validate ───────────────────────────────────────────
+async function validate() {
+  const raw = document.getElementById('hl7input').value.trim();
+  if (!raw) return;
+
+  // Show loading
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('resultArea').style.display = 'none';
+  document.getElementById('loadingState').style.display = 'flex';
+  document.getElementById('statusBanner').style.display = 'none';
+  document.getElementById('validateBtn').disabled = true;
+  document.getElementById('btnText').textContent = 'Analisi…';
+
+  try {
+    const resp = await fetch('/validate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: raw})
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    lastResult = data;
+    renderResult(data);
+  } catch(e) {
+    alert('Errore: ' + e.message);
+  } finally {
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('validateBtn').disabled = false;
+    document.getElementById('btnText').textContent = 'Valida messaggio';
+  }
+}
+
+// ── Render ─────────────────────────────────────────────
+function renderResult(d) {
+  // Status banner
+  const banner = document.getElementById('statusBanner');
+  const errCount = d.issues.filter(i=>i.severity==='ERROR').length;
+  const warnCount = d.issues.filter(i=>i.severity==='WARNING').length;
+  const infoCount = d.issues.filter(i=>i.severity==='INFO').length;
+
+  banner.innerHTML = '';
+  if (d.is_valid) {
+    banner.className = 'ok';
+    banner.innerHTML = `<span class="status-icon">✅</span> <strong>Messaggio valido</strong> — struttura HL7 corretta`;
+  } else {
+    banner.className = 'err';
+    banner.innerHTML = `<span class="status-icon">❌</span> <strong>Messaggio non valido</strong> — ${errCount} error${errCount!==1?'i':'e'}`;
+  }
+  if (errCount || warnCount || infoCount) {
+    const pills = document.createElement('div');
+    pills.className = 'status-counts';
+    if (errCount) pills.innerHTML += `<span class="count-pill count-err">${errCount} ERR</span>`;
+    if (warnCount) pills.innerHTML += `<span class="count-pill count-warn">${warnCount} WARN</span>`;
+    if (infoCount) pills.innerHTML += `<span class="count-pill count-info">${infoCount} INFO</span>`;
+    banner.appendChild(pills);
+  }
+
+  // Badges
+  const totalIssues = d.issues.length;
+  const bIssues = document.getElementById('badgeIssues');
+  bIssues.textContent = totalIssues;
+  bIssues.className = 'tab-badge' + (errCount > 0 ? ' err' : warnCount > 0 ? ' warn' : '');
+  document.getElementById('badgeSegs').textContent = d.segment_count;
+
+  // Summary
+  renderSummary(d);
+
+  // Issues
+  renderIssues(d.issues);
+
+  // Segments
+  renderSegments(d.segment_details);
+
+  // Raw
+  try { renderRaw(d); } catch(e) {
+    document.getElementById('rawDisplay').innerHTML =
+      `<span style="color:#f38ba8">Errore rendering raw: ${esc(e.message)}</span>`;
+  }
+
+  document.getElementById('resultArea').style.display = 'flex';
+}
+
+function val(v, fallback='—') {
+  return v ? `<span class="info-card-value mono">${esc(v)}</span>`
+           : `<span class="info-card-value empty">${fallback}</span>`;
+}
+
+function card(label, value, raw=false) {
+  const v = value
+    ? `<span class="info-card-value${raw?' mono':''}">${esc(value)}</span>`
+    : `<span class="info-card-value empty">non presente</span>`;
+  return `<div class="info-card"><div class="info-card-label">${label}</div>${v}</div>`;
+}
+
+function renderSummary(d) {
+  const grid = document.getElementById('summaryGrid');
+  const msgType = d.message_type ? (d.message_type + (d.event_type ? '^'+d.event_type : '')) : null;
+  grid.innerHTML = [
+    card('Tipo messaggio', msgType, true),
+    card('Versione HL7', d.hl7_version, true),
+    card('Message Control ID', d.message_id, true),
+    card('Sending App', d.sending_app),
+    card('Sending Facility', d.sending_facility),
+    card('Receiving Facility', d.receiving_facility),
+    card('Data/Ora messaggio', d.message_datetime ? fmtDT(d.message_datetime) : null),
+    card('Paziente', d.patient_name),
+    card('ID Paziente', d.patient_id, true),
+    card('Data di nascita', d.dob ? fmtDate(d.dob) : null),
+    card('Sesso', d.sex),
+    card('Segmenti totali', d.segment_count?.toString()),
+  ].join('');
+
+  // Segment list pills
+  const segList = document.getElementById('summarySegList');
+  if (d.segment_names && d.segment_names.length) {
+    segList.innerHTML = '<div class="info-card-label" style="margin-bottom:.4rem">Sequenza segmenti</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:.3rem">'
+      + d.segment_names.map(n=>`<span class="seg-name" style="cursor:default">${esc(n)}</span>`).join('')
+      + '</div>';
+  }
+}
+
+function renderIssues(issues) {
+  const el = document.getElementById('issuesList');
+  if (!issues.length) {
+    el.innerHTML = `<div class="no-issues"><span class="big-icon">✅</span><strong>Nessun problema rilevato</strong><div style="margin-top:.25rem;color:var(--muted)">Il messaggio è strutturalmente corretto.</div></div>`;
+    return;
+  }
+  // Sort: ERROR first, then WARNING, then INFO
+  const order = {ERROR:0, WARNING:1, INFO:2};
+  const sorted = [...issues].sort((a,b)=>(order[a.severity]||9)-(order[b.severity]||9));
+  el.innerHTML = sorted.map(i=>`
+    <div class="issue ${i.severity}">
+      <div class="issue-header">
+        <span class="issue-badge">${i.severity}</span>
+        <span class="issue-seg">${esc(i.segment)}${i.field && i.field!=='—' ? '.'+esc(i.field) : ''}</span>
+        <span class="issue-code">${esc(i.code)}</span>
+      </div>
+      <div class="issue-desc">${esc(i.description)}</div>
+      ${i.suggestion ? `<div class="issue-suggestion">${esc(i.suggestion)}</div>` : ''}
+    </div>`).join('');
+}
+
+function renderSegments(segs) {
+  const el = document.getElementById('segmentsList');
+  if (!segs || !segs.length) { el.innerHTML = '<p style="color:var(--muted)">Nessun segmento</p>'; return; }
+  el.innerHTML = segs.map((s,idx)=>`
+    <div class="seg-card" id="segcard-${idx}">
+      <div class="seg-card-header" onclick="toggleSeg(${idx})">
+        <span class="seg-name">${esc(s.name)}</span>
+        <span class="seg-desc">${esc(s.description)}</span>
+        <span class="seg-chevron">▼</span>
+      </div>
+      <div class="seg-raw">${esc(s.raw)}</div>
+      <div class="seg-fields">
+        ${s.fields.length ? s.fields.map(f=>`
+          <div class="field-row">
+            <span class="field-pos">${f.position}</span>
+            <span class="field-label">${esc(f.label)}</span>
+            <span class="field-value">${esc(f.value)}</span>
+          </div>`).join('') : '<div style="color:var(--muted);font-size:.8rem;padding:.25rem">Nessun campo con valore.</div>'}
+      </div>
+    </div>`).join('');
+  // Open first segment by default
+  toggleSeg(0);
+}
+
+function toggleSeg(idx) {
+  const card = document.getElementById('segcard-'+idx);
+  if (card) card.classList.toggle('open');
+}
+
+function renderRaw(d) {
+  const el = document.getElementById('rawDisplay');
+  // Fallback: use the editor content if d.raw is missing
+  const rawText = d.raw || document.getElementById('hl7input').value || '';
+  if (!rawText.trim()) {
+    el.innerHTML = '<span style="color:#585b70">Nessun contenuto da visualizzare.</span>';
+    return;
+  }
+  const errorSegs = new Set((d.issues || []).filter(i=>i.severity==='ERROR').map(i=>i.segment));
+  // Normalise all line endings: \r\n → \r, \n → \r, then split on \r
+  const normalised = rawText.replace(/\r\n/g, '\r').replace(/\n/g, '\r');
+  const lines = normalised.split('\r').filter(l=>l.trim());
+  el.innerHTML = lines.map(line => {
+    const seg = line.slice(0,3);
+    const rest = line.slice(3);
+    const hasErr = errorSegs.has(seg);
+    const colored = esc(rest)
+      .replace(/\|/g, '<span class="sep-token">|</span>')
+      .replace(/\^/g, '<span class="sep-token">^</span>');
+    return `<span class="raw-line${hasErr?' has-error':''}"><span class="seg-token">${esc(seg)}</span>${colored}</span>`;
+  }).join('\n');
+}
+
+// ── Tabs ───────────────────────────────────────────────
+function switchTab(el) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-'+el.dataset.tab).classList.add('active');
+}
+
+// ── Utilities ──────────────────────────────────────────
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtDT(s) {
+  if (!s || s.length < 8) return s;
+  const y=s.slice(0,4),mo=s.slice(4,6),d=s.slice(6,8);
+  const h=s.slice(8,10),mi=s.slice(10,12),sec=s.slice(12,14);
+  if (s.length >= 12) return `${d}/${mo}/${y} ${h}:${mi}${sec?':'+sec:''}`;
+  return `${d}/${mo}/${y}`;
+}
+
+function fmtDate(s) {
+  if (!s || s.length < 8) return s;
+  return `${s.slice(6,8)}/${s.slice(4,6)}/${s.slice(0,4)}`;
+}
+
+function copyResult() {
+  if (!lastResult) { alert('Nessun risultato da copiare.'); return; }
+  const text = JSON.stringify(lastResult, null, 2);
+  navigator.clipboard.writeText(text).then(()=>alert('Risultato copiato negli appunti (JSON).')).catch(()=>{
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    alert('Risultato copiato negli appunti (JSON).');
+  });
+}
+
+function showHelp() {
+  alert(
+    'HL7 Validator — Guida rapida\n\n' +
+    '• Incolla un messaggio HL7 v2.x nel pannello a sinistra\n' +
+    '• Premi "Valida messaggio" oppure Ctrl+Enter\n' +
+    '• Usa gli esempi in alto per testare diversi tipi di messaggio\n\n' +
+    'Tipi di problema rilevati:\n' +
+    '  ❌ ERROR — il messaggio non è valido HL7\n' +
+    '  ⚠️ WARNING — potenziali problemi o valori non standard\n' +
+    '  ℹ️ INFO — note e suggerimenti\n\n' +
+    'Tab disponibili:\n' +
+    '  Riepilogo — campi chiave estratti\n' +
+    '  Issues — lista dettagliata problemi con suggerimenti\n' +
+    '  Segmenti — esplora ogni segmento campo per campo\n' +
+    '  Raw — visualizzazione colorata del messaggio originale\n\n' +
+    'Shortcut: Ctrl+Enter = Valida'
+  );
+}
+
+// Auto-validate on Ctrl+Enter globally
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey||e.metaKey) && e.key==='Enter') validate();
+});
+</script>
+</body>
+</html>
